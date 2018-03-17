@@ -994,6 +994,10 @@ public interface SqlDialect {
         return false;
     }
 
+    default boolean supportsSharding() {
+        return false;
+    }
+
     default List<Map<String, String>> getPartitions(Connection connection) {
         throw new IllegalStateException("Partitioning is not supported.");
     }

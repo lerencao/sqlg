@@ -95,7 +95,7 @@ public class PostgresDialect extends BaseSqlDialect implements SqlBulkDialect {
 
     @Override
     public Set<String> getInternalSchemas() {
-        return ImmutableSet.copyOf(Arrays.asList("pg_catalog", "information_schema", "tiger", "tiger_data", "topology"));
+        return ImmutableSet.copyOf(Arrays.asList("pg_catalog", "information_schema", "tiger", "tiger_data", "topology", "citus"));
     }
 
     @Override
@@ -3983,5 +3983,10 @@ public class PostgresDialect extends BaseSqlDialect implements SqlBulkDialect {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public boolean supportsSharding() {
+        return true;
     }
 }

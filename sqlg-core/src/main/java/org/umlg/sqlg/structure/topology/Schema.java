@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Preconditions;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.tinkerpop.gremlin.process.traversal.Path;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -154,15 +155,21 @@ public class Schema implements TopologyInf {
     }
 
     public VertexLabel ensureVertexLabelExist(final String label, final Map<String, PropertyType> columns) {
+        return ensureVertexLabelExist(label, columns, null, null);
+    }
+
+    public VertexLabel ensureVertexLabelExist(final String label, final Map<String, PropertyType> columns, String distributedColumn, String colocate) {
         Objects.requireNonNull(label, "Given table must not be null");
         Preconditions.checkArgument(!label.startsWith(VERTEX_PREFIX), "label may not be prefixed with %s", VERTEX_PREFIX);
-
+        if (!StringUtils.isEmpty(distributedColumn)) {
+            Preconditions.checkState(columns.containsKey(distributedColumn), "distributedColumn %s must be part of the column list.", distributedColumn);
+        }
         Optional<VertexLabel> vertexLabelOptional = this.getVertexLabel(label);
         if (!vertexLabelOptional.isPresent()) {
             this.topology.lock();
             vertexLabelOptional = this.getVertexLabel(label);
             if (!vertexLabelOptional.isPresent()) {
-                return this.createVertexLabel(label, columns);
+                return this.createVertexLabel(label, columns, distributedColumn, colocate);
             } else {
                 return vertexLabelOptional.get();
             }
@@ -355,11 +362,11 @@ public class Schema implements TopologyInf {
         return vertexLabel;
     }
 
-    private VertexLabel createVertexLabel(String vertexLabelName, Map<String, PropertyType> columns) {
+    private VertexLabel createVertexLabel(String vertexLabelName, Map<String, PropertyType> columns, String distributedColumn, String colocate) {
         Preconditions.checkState(!this.isSqlgSchema(), "createVertexLabel may not be called for \"%s\"", SQLG_SCHEMA);
         Preconditions.checkArgument(!vertexLabelName.startsWith(VERTEX_PREFIX), "vertex label may not start with " + VERTEX_PREFIX);
         this.uncommittedRemovedVertexLabels.remove(this.name + "." + VERTEX_PREFIX + vertexLabelName);
-        VertexLabel vertexLabel = VertexLabel.createVertexLabel(this.sqlgGraph, this, vertexLabelName, columns);
+        VertexLabel vertexLabel = VertexLabel.createVertexLabel(this.sqlgGraph, this, vertexLabelName, columns, distributedColumn, colocate);
         this.uncommittedVertexLabels.put(this.name + "." + VERTEX_PREFIX + vertexLabelName, vertexLabel);
         this.getTopology().fire(vertexLabel, "", TopologyChangeAction.CREATE);
         return vertexLabel;

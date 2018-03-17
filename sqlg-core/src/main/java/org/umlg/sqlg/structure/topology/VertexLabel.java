@@ -60,10 +60,10 @@ public class VertexLabel extends AbstractLabel {
         return vertexLabel;
     }
 
-    static VertexLabel createVertexLabel(SqlgGraph sqlgGraph, Schema schema, String label, Map<String, PropertyType> columns) {
+    static VertexLabel createVertexLabel(SqlgGraph sqlgGraph, Schema schema, String label, Map<String, PropertyType> columns, String distributedColumn, String colocate) {
         Preconditions.checkArgument(!schema.isSqlgSchema(), "createVertexLabel may not be called for \"%s\"", SQLG_SCHEMA);
         VertexLabel vertexLabel = new VertexLabel(schema, label, columns);
-        vertexLabel.createVertexLabelOnDb(columns);
+        vertexLabel.createVertexLabelOnDb(columns, distributedColumn, colocate);
         TopologyManager.addVertexLabel(sqlgGraph, schema.getName(), label, columns);
         vertexLabel.committed = false;
         return vertexLabel;
@@ -355,7 +355,7 @@ public class VertexLabel extends AbstractLabel {
         }
     }
 
-    private void createVertexLabelOnDb(Map<String, PropertyType> columns) {
+    private void createVertexLabelOnDb(Map<String, PropertyType> columns, String distributedColumn, String colocate) {
         StringBuilder sql = new StringBuilder(this.sqlgGraph.getSqlDialect().createTableStatement());
         sql.append(this.sqlgGraph.getSqlDialect().maybeWrapInQoutes(this.schema.getName()));
         sql.append(".");
@@ -363,11 +363,24 @@ public class VertexLabel extends AbstractLabel {
         sql.append(" (");
         sql.append(this.sqlgGraph.getSqlDialect().maybeWrapInQoutes("ID"));
         sql.append(" ");
-        sql.append(this.sqlgGraph.getSqlDialect().getAutoIncrementPrimaryKeyConstruct());
+        if (StringUtils.isEmpty(distributedColumn)) {
+            sql.append(this.sqlgGraph.getSqlDialect().getAutoIncrementPrimaryKeyConstruct());
+        } else {
+            sql.append(" BIGSERIAL");
+        }
         if (columns.size() > 0) {
             sql.append(", ");
         }
         buildColumns(this.sqlgGraph, columns, sql);
+        if (!StringUtils.isEmpty(distributedColumn)) {
+            sql.append(", CONSTRAINT dist_pk_");
+            sql.append(getLabel());
+            sql.append(" PRIMARY KEY (");
+            sql.append(this.sqlgGraph.getSqlDialect().maybeWrapInQoutes("ID"));
+            sql.append(", ");
+            sql.append(this.sqlgGraph.getSqlDialect().maybeWrapInQoutes(distributedColumn));
+            sql.append(")");
+        }
         sql.append(")");
         if (this.sqlgGraph.getSqlDialect().needsSemicolon()) {
             sql.append(";");
@@ -380,6 +393,28 @@ public class VertexLabel extends AbstractLabel {
             stmt.execute(sql.toString());
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+        if (!StringUtils.isEmpty(distributedColumn)) {
+            sql.setLength(0);
+            sql.append("SELECT create_distributed_table('");
+            sql.append(this.sqlgGraph.getSqlDialect().maybeWrapInQoutes(getPrefix() + getLabel()));
+            sql.append("', '");
+            sql.append(distributedColumn);
+            sql.append("'");
+            if (!StringUtils.isEmpty(colocate)) {
+                sql.append(", colocate_with => '");
+                sql.append(colocate);
+                sql.append("'");
+            }
+            sql.append(")");
+            if (logger.isDebugEnabled()) {
+                logger.debug(sql.toString());
+            }
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute(sql.toString());
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
